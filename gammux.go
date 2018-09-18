@@ -18,7 +18,7 @@ import (
 
 const (
 	fullScaling = 2
-	targetGamma = 1 / .023
+	targetGamma = 1 / .005
 	sourceGamma = 2.2 // this is the common default.  Use this since Go doesn't expose it.
 )
 
@@ -59,12 +59,8 @@ var (
 	dest      = flag.String("dest", "", "The dest file path of the PNG image")
 )
 
-type setter interface {
-	Set(x, y int, c color.Color)
-}
-
 func darkenThumbnail(thumbnail image.Image, scale float64) image.Image {
-	newThumbnail := image.NewRGBA64(image.Rectangle{
+	newThumbnail := image.NewRGBA(image.Rectangle{
 		Max: image.Point{
 			X: thumbnail.Bounds().Dx(),
 			Y: thumbnail.Bounds().Dy(),
@@ -75,11 +71,11 @@ func darkenThumbnail(thumbnail image.Image, scale float64) image.Image {
 		var dstx int
 		for srcx := thumbnail.Bounds().Min.X; srcx < thumbnail.Bounds().Max.X; srcx++ {
 			r, g, b, a := thumbnail.At(srcx, srcy).RGBA()
-			newThumbnail.Set(dstx, dsty, color.RGBA64{
-				R: uint16(float64(r) * scale),
-				G: uint16(float64(g) * scale),
-				B: uint16(float64(b) * scale),
-				A: uint16(a),
+			newThumbnail.Set(dstx, dsty, color.RGBA{
+				R: uint8(float64(r>>8) * scale),
+				G: uint8(float64(g>>8) * scale),
+				B: uint8(float64(b>>8) * scale),
+				A: uint8(a >> 8),
 			})
 			dstx++
 		}
@@ -99,32 +95,33 @@ func resizeFull(src image.Image, targetBounds image.Rectangle, stretch bool) (
 				Y: targetBounds.Dy() / fullScaling,
 			},
 		}
-	}
-
-	// Check if the source image is wider than the dest, or narrower.   The odd multiplication avoids
-	// casting to float, at the risk of possibly overflow.  Don't use images taller or wider than 32K
-	// on 32 bits machines.
-	if src.Bounds().Dx()*targetBounds.Dy() > targetBounds.Dx()*src.Bounds().Dy() {
-		// source image is wider.
-		newTargetBounds = image.Rectangle{
-			Max: image.Point{
-				X: targetBounds.Dx() / fullScaling,
-				Y: src.Bounds().Dy() * targetBounds.Dx() / src.Bounds().Dx() / fullScaling,
-			},
-		}
-		yoffset = (targetBounds.Dy() - newTargetBounds.Dy()*fullScaling) / 2
 	} else {
-		// source image is narrower.
-		newTargetBounds = image.Rectangle{
-			Max: image.Point{
-				X: src.Bounds().Dx() * targetBounds.Dy() / src.Bounds().Dy() / fullScaling,
-				Y: targetBounds.Dy() / fullScaling,
-			},
+
+		// Check if the source image is wider than the dest, or narrower.   The odd multiplication
+		// avoids casting to float, at the risk of possibly overflow.  Don't use images taller or
+		// wider than 32K on 32 bits machines.
+		if src.Bounds().Dx()*targetBounds.Dy() > targetBounds.Dx()*src.Bounds().Dy() {
+			// source image is wider.
+			newTargetBounds = image.Rectangle{
+				Max: image.Point{
+					X: targetBounds.Dx() / fullScaling,
+					Y: src.Bounds().Dy() * targetBounds.Dx() / src.Bounds().Dx() / fullScaling,
+				},
+			}
+			yoffset = (targetBounds.Dy() - newTargetBounds.Dy()*fullScaling) / 2
+		} else {
+			// source image is narrower.
+			newTargetBounds = image.Rectangle{
+				Max: image.Point{
+					X: src.Bounds().Dx() * targetBounds.Dy() / src.Bounds().Dy() / fullScaling,
+					Y: targetBounds.Dy() / fullScaling,
+				},
+			}
+			xoffset = (targetBounds.Dx() - newTargetBounds.Dx()*fullScaling) / 2
 		}
-		xoffset = (targetBounds.Dx() - newTargetBounds.Dx()*fullScaling) / 2
 	}
 
-	dst := image.NewNRGBA(newTargetBounds)
+	dst := image.NewRGBA(newTargetBounds)
 	scaler := draw.CatmullRom
 	scaler.Scale(dst, newTargetBounds, src, src.Bounds(), draw.Over, nil)
 	return dst, xoffset, yoffset
@@ -147,7 +144,7 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 		full, xoffset, yoffset = resizeFull(full, noOffsetThumbnailRec, stretch)
 	}
 	// thumbnailDarkenFactor is a max value that will turn to black after the gamma transform
-	dst := darkenThumbnail(thumbnail, thumbnailDarkenFactor).(*image.RGBA64)
+	dst := darkenThumbnail(thumbnail, thumbnailDarkenFactor).(*image.RGBA)
 	if dst.Bounds() != noOffsetThumbnailRec {
 		panic("Bad bounds")
 	}
@@ -161,19 +158,19 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 		var dstx int
 		for srcx := full.Bounds().Min.X; srcx < full.Bounds().Max.X; srcx++ {
 			srcr, srcg, srcb, srca := full.At(srcx, srcy).RGBA()
-			log.Println(srcr, srcg, srcb, srca)
-			const maxValue = 0xFFFF
+			const oldMaxValue = 0xFFFF
+			const newMaxValue = 0xFF
 			clamp := func(in float64) float64 {
-				if in > maxValue {
-					return maxValue
+				if in > newMaxValue {
+					return newMaxValue
 				}
 				return in
 			}
 			var (
 				// Make sure there are no zeros
-				red   = (float64(srcr) + 1) / (maxValue + 1)
-				green = (float64(srcg) + 1) / (maxValue + 1)
-				blue  = (float64(srcb) + 1) / (maxValue + 1)
+				red   = (float64(srcr) + 1) / (oldMaxValue + 1)
+				green = (float64(srcg) + 1) / (oldMaxValue + 1)
+				blue  = (float64(srcb) + 1) / (oldMaxValue + 1)
 
 				// Remove the old gamma
 				linearred   = math.Pow(red, sourceGamma)
@@ -182,13 +179,13 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 
 				// apply the new gamma
 				newred   = math.Pow(linearred, 1/targetGamma)
-				newgreen = math.Pow(lineargreen, 1/sourceGamma)
-				newblue  = math.Pow(linearblue, 1/sourceGamma)
+				newgreen = math.Pow(lineargreen, 1/targetGamma)
+				newblue  = math.Pow(linearblue, 1/targetGamma)
 
 				// Add error and bring back up to scaled range
-				adjustedred   = newred*maxValue + errcurr[srcx+1].r
-				adjustedgreen = newgreen*maxValue + errcurr[srcx+1].g
-				adjustedblue  = newblue*maxValue + errcurr[srcx+1].b
+				adjustedred   = newred*newMaxValue + errcurr[srcx+1].r
+				adjustedgreen = newgreen*newMaxValue + errcurr[srcx+1].g
+				adjustedblue  = newblue*newMaxValue + errcurr[srcx+1].b
 
 				roundred   = clamp(math.Round(adjustedred))
 				roundgreen = clamp(math.Round(adjustedgreen))
@@ -201,6 +198,7 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 					diffgreen = adjustedgreen - roundgreen
 					diffblue  = adjustedblue - roundblue
 				)
+				log.Println(errcurr[srcx+1])
 
 				errcurr[srcx+2].r += diffred * 7 / 16
 				errcurr[srcx+2].g += diffgreen * 7 / 16
@@ -219,11 +217,11 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 				errnext[srcx+2].b += diffblue * 1 / 16
 			}
 
-			dst.SetRGBA64(dstx+xoffset, dsty+yoffset, color.RGBA64{
-				R: uint16(roundred),
-				G: uint16(roundgreen),
-				B: uint16(roundblue),
-				A: uint16(srca),
+			dst.SetRGBA(dstx+xoffset, dsty+yoffset, color.RGBA{
+				R: uint8(roundred),
+				G: uint8(roundgreen),
+				B: uint8(roundblue),
+				A: uint8(srca),
 			})
 			dstx += fullScaling
 		}
