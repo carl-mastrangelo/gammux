@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"flag"
 	"fmt"
+	"hash/crc32"
 	"image"
 	"image/color"
 	_ "image/gif"
@@ -18,7 +21,7 @@ import (
 
 const (
 	fullScaling = 2
-	targetGamma = 1 / .001
+	targetGamma = 1 / .02
 	sourceGamma = 2.2 // this is the common default.  Use this since Go doesn't expose it.
 )
 
@@ -168,7 +171,7 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 			}
 			nonneg := func(in float64) float64 {
 				if in < 0 {
-					return 1 / 255.0
+					return 1.0 / newMaxValue
 				}
 				return in
 			}
@@ -183,6 +186,7 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 				lineargreen = math.Pow(green, sourceGamma)
 				linearblue  = math.Pow(blue, sourceGamma)
 
+				// Apply the previous error
 				errorred   = linearred + errcurr[srcx+1].r
 				errorgreen = lineargreen + errcurr[srcx+1].g
 				errorblue  = linearblue + errcurr[srcx+1].b
@@ -209,10 +213,6 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 					diffgreen = errorgreen - math.Pow(roundgreen/newMaxValue, targetGamma)
 					diffblue  = errorblue - math.Pow(roundblue/newMaxValue, targetGamma)
 				)
-				//log.Println(adjustedred, roundred, newred, errcurr[srcx+1].r)
-				if math.IsNaN(diffred) {
-					panic("bad")
-				}
 
 				errcurr[srcx+2].r += diffred * 7 / 16
 				errcurr[srcx+2].g += diffgreen * 7 / 16
@@ -262,9 +262,34 @@ func gammaMuxData(thumbnail, full io.Reader, dest io.Writer, dither, stretch boo
 		return ec
 	}
 
-	if err := png.Encode(dest, dim); err != nil {
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, dim); err != nil {
 		return chain(err, "Unable to encode dest PNG")
 	}
+
+	headerIndex := bytes.Index(buf.Bytes(), []byte{0, 0, 0, 13, 'I', 'H', 'D', 'R'})
+	if headerIndex <= 0 {
+		return chain(nil, "PNG missing header")
+	}
+	headerIndexEnd := headerIndex + 13 + 4 + 4 + 4
+
+	if _, err := dest.Write(buf.Bytes()[:headerIndexEnd]); err != nil {
+		return chain(err, "Unable to write PNG header")
+	}
+
+	gamaBuf := make([]byte, 4+4+4+4)
+	copy(gamaBuf, []byte{0, 0, 0, 4, 'g', 'A', 'M', 'A'})
+	binary.BigEndian.PutUint32(gamaBuf[8:12], uint32(100000/targetGamma))
+	crc := crc32.NewIEEE()
+	crc.Write(gamaBuf[4:12])
+	binary.BigEndian.PutUint32(gamaBuf[12:16], crc.Sum32())
+	if _, err := dest.Write(gamaBuf); err != nil {
+		return chain(err, "Unable to write PNG gAMA chunk")
+	}
+	if _, err := dest.Write(buf.Bytes()[headerIndexEnd:]); err != nil {
+		return chain(err, "Unable to write PNG header")
+	}
+
 	return nil
 }
 
@@ -279,6 +304,7 @@ func gammaMuxFiles(thumbnail, full, dest string, dither, stretch bool) *errchain
 	if err != nil {
 		return chain(err, "Unable to open full file")
 	}
+	defer ff.Close()
 
 	df, err := os.Create(dest)
 	if err != nil {
