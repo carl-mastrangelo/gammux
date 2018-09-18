@@ -18,7 +18,7 @@ import (
 
 const (
 	fullScaling = 2
-	targetGamma = 1 / .005
+	targetGamma = 1 / .001
 	sourceGamma = 2.2 // this is the common default.  Use this since Go doesn't expose it.
 )
 
@@ -166,6 +166,12 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 				}
 				return in
 			}
+			nonneg := func(in float64) float64 {
+				if in < 0 {
+					return 1 / 255.0
+				}
+				return in
+			}
 			var (
 				// Make sure there are no zeros
 				red   = (float64(srcr) + 1) / (oldMaxValue + 1)
@@ -177,15 +183,19 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 				lineargreen = math.Pow(green, sourceGamma)
 				linearblue  = math.Pow(blue, sourceGamma)
 
+				errorred   = linearred + errcurr[srcx+1].r
+				errorgreen = lineargreen + errcurr[srcx+1].g
+				errorblue  = linearblue + errcurr[srcx+1].b
+
 				// apply the new gamma
-				newred   = math.Pow(linearred, 1/targetGamma)
-				newgreen = math.Pow(lineargreen, 1/targetGamma)
-				newblue  = math.Pow(linearblue, 1/targetGamma)
+				newred   = math.Pow(nonneg(errorred), 1/targetGamma)
+				newgreen = math.Pow(nonneg(errorgreen), 1/targetGamma)
+				newblue  = math.Pow(nonneg(errorblue), 1/targetGamma)
 
 				// Add error and bring back up to scaled range
-				adjustedred   = newred*newMaxValue + errcurr[srcx+1].r
-				adjustedgreen = newgreen*newMaxValue + errcurr[srcx+1].g
-				adjustedblue  = newblue*newMaxValue + errcurr[srcx+1].b
+				adjustedred   = newred * newMaxValue
+				adjustedgreen = newgreen * newMaxValue
+				adjustedblue  = newblue * newMaxValue
 
 				roundred   = clamp(math.Round(adjustedred))
 				roundgreen = clamp(math.Round(adjustedgreen))
@@ -193,12 +203,16 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 			)
 
 			if dither {
+				// Undo the gamma transform once more to make the error linear
 				var (
-					diffred   = adjustedred - roundred
-					diffgreen = adjustedgreen - roundgreen
-					diffblue  = adjustedblue - roundblue
+					diffred   = errorred - math.Pow(roundred/newMaxValue, targetGamma)
+					diffgreen = errorgreen - math.Pow(roundgreen/newMaxValue, targetGamma)
+					diffblue  = errorblue - math.Pow(roundblue/newMaxValue, targetGamma)
 				)
-				log.Println(errcurr[srcx+1])
+				//log.Println(adjustedred, roundred, newred, errcurr[srcx+1].r)
+				if math.IsNaN(diffred) {
+					panic("bad")
+				}
 
 				errcurr[srcx+2].r += diffred * 7 / 16
 				errcurr[srcx+2].g += diffgreen * 7 / 16
