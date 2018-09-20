@@ -13,7 +13,7 @@ on where it is viewed.
 To run:
 
 ```bash
-go run gammux.go -thumbnail ./fine.jpg  -full ./notfine.png  -dest mux.png -dither=true
+go run gammux.go -thumbnail ./fine.jpg  -full ./notfine.jpg  -dest mux.png -dither=true
 ```
 
 The tool takes 2 images as input:
@@ -27,7 +27,7 @@ In the example, this is the thumbnail:
 
 And the full image:
 
-![notfine.png](https://github.com/carl-mastrangelo/gammux/raw/master/notfine.png "Not Fine")
+![notfine.jpg](https://github.com/carl-mastrangelo/gammux/raw/master/notfine.jpg "Not Fine")
 
 This will produce 
 
