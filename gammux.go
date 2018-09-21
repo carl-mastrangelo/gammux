@@ -141,11 +141,8 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 			Y: thumbnail.Bounds().Dy(),
 		},
 	}
-
-	var xoffset, yoffset int
-	if full.Bounds() != noOffsetThumbnailRec {
-		full, xoffset, yoffset = resizeFull(full, noOffsetThumbnailRec, stretch)
-	}
+	// Always resize
+	full, xoffset, yoffset := resizeFull(full, noOffsetThumbnailRec, stretch)
 	// thumbnailDarkenFactor is a max value that will turn to black after the gamma transform
 	dst := darkenThumbnail(thumbnail, thumbnailDarkenFactor).(*image.RGBA)
 	if dst.Bounds() != noOffsetThumbnailRec {
@@ -170,7 +167,7 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 				return in
 			}
 			nonneg := func(in float64) float64 {
-				if in < 0 {
+				if in <= 0 {
 					return 1.0 / newMaxValue
 				}
 				return in
@@ -235,7 +232,7 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 				R: uint8(roundred),
 				G: uint8(roundgreen),
 				B: uint8(roundblue),
-				A: uint8(srca),
+				A: uint8(srca >> 8),
 			})
 			dstx += fullScaling
 		}
