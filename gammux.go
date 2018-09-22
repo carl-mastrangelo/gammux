@@ -90,29 +90,28 @@ func linearImage(srcim image.Image, gamma float64) *image.NRGBA64 {
 	return dstim
 }
 
-func darkenThumbnail(thumbnail image.Image, scale float64) image.Image {
-	newThumbnail := image.NewRGBA(image.Rectangle{
+func darkenImage(srcim image.Image, scale float64) *image.NRGBA64 {
+	dstim := image.NewNRGBA64(image.Rectangle{
 		Max: image.Point{
-			X: thumbnail.Bounds().Dx(),
-			Y: thumbnail.Bounds().Dy(),
+			X: srcim.Bounds().Dx(),
+			Y: srcim.Bounds().Dy(),
 		},
 	})
 	var dsty int
-	for srcy := thumbnail.Bounds().Min.Y; srcy < thumbnail.Bounds().Max.Y; srcy++ {
+	for srcy := srcim.Bounds().Min.Y; srcy < srcim.Bounds().Max.Y; srcy++ {
 		var dstx int
-		for srcx := thumbnail.Bounds().Min.X; srcx < thumbnail.Bounds().Max.X; srcx++ {
-			r, g, b, a := thumbnail.At(srcx, srcy).RGBA()
-			newThumbnail.SetRGBA(dstx, dsty, color.RGBA{
-				R: uint8(float64(r>>8) * scale),
-				G: uint8(float64(g>>8) * scale),
-				B: uint8(float64(b>>8) * scale),
-				A: uint8(a >> 8),
-			})
+		for srcx := srcim.Bounds().Min.X; srcx < srcim.Bounds().Max.X; srcx++ {
+			nrgba64 := color.NRGBA64Model.Convert(srcim.At(srcx, srcy)).(color.NRGBA64)
+			nrgba64.R = uint16(float64(nrgba64.R) * scale)
+			nrgba64.G = uint16(float64(nrgba64.G) * scale)
+			nrgba64.B = uint16(float64(nrgba64.B) * scale)
+			// Alpha is not affected
+			dstim.SetNRGBA64(dstx, dsty, nrgba64)
 			dstx++
 		}
 		dsty++
 	}
-	return newThumbnail
+	return dstim
 }
 
 func resizeFull(src image.Image, targetBounds image.Rectangle, stretch bool) (
@@ -175,7 +174,7 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 	// Always resize, regardless of dimensions
 	full, xoffset, yoffset := resizeFull(full, noOffsetThumbnailRec, stretch)
 	// thumbnailDarkenFactor is a max value that will turn to black after the gamma transform
-	dst := darkenThumbnail(thumbnail, thumbnailDarkenFactor).(*image.RGBA)
+	dst := darkenImage(thumbnail, thumbnailDarkenFactor)
 	if dst.Bounds() != noOffsetThumbnailRec {
 		panic("Bad bounds")
 	}
@@ -188,9 +187,9 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 		errnext = make([]dithererr, full.Bounds().Dx()+2)
 		var dstx int
 		for srcx := full.Bounds().Min.X; srcx < full.Bounds().Max.X; srcx++ {
-			srcr, srcg, srcb, srca := full.At(srcx, srcy).RGBA()
+			srcnrgba := color.NRGBA64Model.Convert(full.At(srcx, srcy)).(color.NRGBA64)
 			const oldMaxValue = 0xFFFF
-			const newMaxValue = 0xFF
+			const newMaxValue = 0xFFFF
 			clamp := func(in float64) float64 {
 				if in > newMaxValue {
 					return newMaxValue
@@ -205,9 +204,9 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 			}
 			var (
 				// Make sure there are no zeros
-				red   = (float64(srcr) + 1) / (oldMaxValue + 1)
-				green = (float64(srcg) + 1) / (oldMaxValue + 1)
-				blue  = (float64(srcb) + 1) / (oldMaxValue + 1)
+				red   = (float64(srcnrgba.R) + 1) / (oldMaxValue + 1)
+				green = (float64(srcnrgba.G) + 1) / (oldMaxValue + 1)
+				blue  = (float64(srcnrgba.B) + 1) / (oldMaxValue + 1)
 
 				// Apply the previous error
 				errorred   = red + errcurr[srcx+1].r
@@ -254,11 +253,11 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 				errnext[srcx+2].b += diffblue * 1 / 16
 			}
 
-			dst.SetRGBA(dstx+xoffset, dsty+yoffset, color.RGBA{
-				R: uint8(roundred),
-				G: uint8(roundgreen),
-				B: uint8(roundblue),
-				A: uint8(srca >> 8),
+			dst.SetNRGBA64(dstx+xoffset, dsty+yoffset, color.NRGBA64{
+				R: uint16(roundred),
+				G: uint16(roundgreen),
+				B: uint16(roundblue),
+				A: srcnrgba.A,
 			})
 			dstx += fullScaling
 		}
@@ -390,7 +389,7 @@ func runHttpServer() {
 		w.Header().Set("Content-Disposition", "attachment; filename=\"merged.png\"")
 		w.Write(dest.Bytes())
 	}))
-	log.Println("Listening on http://localhost:8080/")
+	log.Println("Open up your Web Browser to: http://localhost:8080/")
 	log.Println(http.ListenAndServe("localhost:8080", nil))
 	os.Exit(1)
 }
