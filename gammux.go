@@ -65,6 +65,31 @@ var (
 		"webfallback", true, "If true, enable a web UI fallback at http://localhost:8080/")
 )
 
+func linearImage(srcim image.Image, gamma float64) *image.NRGBA64 {
+	dstim := image.NewNRGBA64(image.Rectangle{
+		Max: image.Point{
+			X: srcim.Bounds().Dx(),
+			Y: srcim.Bounds().Dy(),
+		},
+	})
+	var dsty int
+	for srcy := srcim.Bounds().Min.Y; srcy < srcim.Bounds().Max.Y; srcy++ {
+		var dstx int
+		for srcx := srcim.Bounds().Min.X; srcx < srcim.Bounds().Max.X; srcx++ {
+			const max = 0xFFFF
+			nrgba64 := color.NRGBA64Model.Convert(srcim.At(srcx, srcy)).(color.NRGBA64)
+			nrgba64.R = uint16(max * math.Pow(float64(nrgba64.R)/max, gamma))
+			nrgba64.G = uint16(max * math.Pow(float64(nrgba64.G)/max, gamma))
+			nrgba64.B = uint16(max * math.Pow(float64(nrgba64.B)/max, gamma))
+			// Alpha is not affected
+			dstim.SetNRGBA64(dstx, dsty, nrgba64)
+			dstx++
+		}
+		dsty++
+	}
+	return dstim
+}
+
 func darkenThumbnail(thumbnail image.Image, scale float64) image.Image {
 	newThumbnail := image.NewRGBA(image.Rectangle{
 		Max: image.Point{
@@ -77,7 +102,7 @@ func darkenThumbnail(thumbnail image.Image, scale float64) image.Image {
 		var dstx int
 		for srcx := thumbnail.Bounds().Min.X; srcx < thumbnail.Bounds().Max.X; srcx++ {
 			r, g, b, a := thumbnail.At(srcx, srcy).RGBA()
-			newThumbnail.Set(dstx, dsty, color.RGBA{
+			newThumbnail.SetRGBA(dstx, dsty, color.RGBA{
 				R: uint8(float64(r>>8) * scale),
 				G: uint8(float64(g>>8) * scale),
 				B: uint8(float64(b>>8) * scale),
@@ -144,7 +169,10 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 			Y: thumbnail.Bounds().Dy(),
 		},
 	}
-	// Always resize
+
+	// linearize before resizing
+	full = linearImage(full, sourceGamma)
+	// Always resize, regardless of dimensions
 	full, xoffset, yoffset := resizeFull(full, noOffsetThumbnailRec, stretch)
 	// thumbnailDarkenFactor is a max value that will turn to black after the gamma transform
 	dst := darkenThumbnail(thumbnail, thumbnailDarkenFactor).(*image.RGBA)
@@ -181,15 +209,10 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 				green = (float64(srcg) + 1) / (oldMaxValue + 1)
 				blue  = (float64(srcb) + 1) / (oldMaxValue + 1)
 
-				// Remove the old gamma
-				linearred   = math.Pow(red, sourceGamma)
-				lineargreen = math.Pow(green, sourceGamma)
-				linearblue  = math.Pow(blue, sourceGamma)
-
 				// Apply the previous error
-				errorred   = linearred + errcurr[srcx+1].r
-				errorgreen = lineargreen + errcurr[srcx+1].g
-				errorblue  = linearblue + errcurr[srcx+1].b
+				errorred   = red + errcurr[srcx+1].r
+				errorgreen = green + errcurr[srcx+1].g
+				errorblue  = blue + errcurr[srcx+1].b
 
 				// apply the new gamma
 				newred   = math.Pow(nonneg(errorred), 1/targetGamma)
