@@ -24,6 +24,8 @@ const (
 	fullScaling = 2
 	targetGamma = 1 / .02
 	sourceGamma = 2.2 // this is the common default.  Use this since Go doesn't expose it.
+
+	nrgbaMax = 0xFFFF
 )
 
 var thumbnailDarkenFactor = math.Pow( /*darkest pixel=*/ math.Nextafter(0.5, 0)/255, 1/targetGamma)
@@ -65,6 +67,8 @@ var (
 		"webfallback", true, "If true, enable a web UI fallback at http://localhost:8080/")
 )
 
+// Linearize image.  At leats 16 bits per channel are needed as per
+// http://lbodnar.dsl.pipex.com/imaging/gamma.html
 func linearImage(srcim image.Image, gamma float64) *image.NRGBA64 {
 	dstim := image.NewNRGBA64(image.Rectangle{
 		Max: image.Point{
@@ -76,11 +80,10 @@ func linearImage(srcim image.Image, gamma float64) *image.NRGBA64 {
 	for srcy := srcim.Bounds().Min.Y; srcy < srcim.Bounds().Max.Y; srcy++ {
 		var dstx int
 		for srcx := srcim.Bounds().Min.X; srcx < srcim.Bounds().Max.X; srcx++ {
-			const max = 0xFFFF
 			nrgba64 := color.NRGBA64Model.Convert(srcim.At(srcx, srcy)).(color.NRGBA64)
-			nrgba64.R = uint16(max * math.Pow(float64(nrgba64.R)/max, gamma))
-			nrgba64.G = uint16(max * math.Pow(float64(nrgba64.G)/max, gamma))
-			nrgba64.B = uint16(max * math.Pow(float64(nrgba64.B)/max, gamma))
+			nrgba64.R = uint16(nrgbaMax * math.Pow(float64(nrgba64.R)/nrgbaMax, gamma))
+			nrgba64.G = uint16(nrgbaMax * math.Pow(float64(nrgba64.G)/nrgbaMax, gamma))
+			nrgba64.B = uint16(nrgbaMax * math.Pow(float64(nrgba64.B)/nrgbaMax, gamma))
 			// Alpha is not affected
 			dstim.SetNRGBA64(dstx, dsty, nrgba64)
 			dstx++
@@ -114,19 +117,19 @@ func darkenImage(srcim image.Image, scale float64) *image.NRGBA64 {
 	return dstim
 }
 
-func resizeFull(src image.Image, targetBounds image.Rectangle, stretch bool) (
-	image.Image, int, int) {
+// Assumes src  is linear
+func resize(src image.Image, targetBounds image.Rectangle, targetScaleDown int, stretch bool) (
+	*image.NRGBA64, int, int) {
 	var xoffset, yoffset int
 	var newTargetBounds image.Rectangle
 	if stretch {
 		newTargetBounds = image.Rectangle{
 			Max: image.Point{
-				X: targetBounds.Dx() / fullScaling,
-				Y: targetBounds.Dy() / fullScaling,
+				X: targetBounds.Dx() / targetScaleDown,
+				Y: targetBounds.Dy() / targetScaleDown,
 			},
 		}
 	} else {
-
 		// Check if the source image is wider than the dest, or narrower.   The odd multiplication
 		// avoids casting to float, at the risk of possibly overflow.  Don't use images taller or
 		// wider than 32K on 32 bits machines.
@@ -134,24 +137,24 @@ func resizeFull(src image.Image, targetBounds image.Rectangle, stretch bool) (
 			// source image is wider.
 			newTargetBounds = image.Rectangle{
 				Max: image.Point{
-					X: targetBounds.Dx() / fullScaling,
-					Y: src.Bounds().Dy() * targetBounds.Dx() / src.Bounds().Dx() / fullScaling,
+					X: targetBounds.Dx() / targetScaleDown,
+					Y: src.Bounds().Dy() * targetBounds.Dx() / src.Bounds().Dx() / targetScaleDown,
 				},
 			}
-			yoffset = (targetBounds.Dy() - newTargetBounds.Dy()*fullScaling) / 2
+			yoffset = (targetBounds.Dy() - newTargetBounds.Dy()*targetScaleDown) / 2
 		} else {
 			// source image is narrower.
 			newTargetBounds = image.Rectangle{
 				Max: image.Point{
-					X: src.Bounds().Dx() * targetBounds.Dy() / src.Bounds().Dy() / fullScaling,
-					Y: targetBounds.Dy() / fullScaling,
+					X: src.Bounds().Dx() * targetBounds.Dy() / src.Bounds().Dy() / targetScaleDown,
+					Y: targetBounds.Dy() / targetScaleDown,
 				},
 			}
-			xoffset = (targetBounds.Dx() - newTargetBounds.Dx()*fullScaling) / 2
+			xoffset = (targetBounds.Dx() - newTargetBounds.Dx()*targetScaleDown) / 2
 		}
 	}
 
-	dst := image.NewRGBA(newTargetBounds)
+	dst := image.NewNRGBA64(newTargetBounds)
 	scaler := draw.CatmullRom
 	scaler.Scale(dst, newTargetBounds, src, src.Bounds(), draw.Over, nil)
 	return dst, xoffset, yoffset
@@ -170,24 +173,24 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 	}
 
 	// linearize before resizing
-	full = linearImage(full, sourceGamma)
+	linearfull := linearImage(full, sourceGamma)
 	// Always resize, regardless of dimensions
-	full, xoffset, yoffset := resizeFull(full, noOffsetThumbnailRec, stretch)
+	smallfull, xoffset, yoffset := resize(linearfull, noOffsetThumbnailRec, fullScaling, stretch)
 	// thumbnailDarkenFactor is a max value that will turn to black after the gamma transform
 	dst := darkenImage(thumbnail, thumbnailDarkenFactor)
 	if dst.Bounds() != noOffsetThumbnailRec {
 		panic("Bad bounds")
 	}
 	var errcurr, errnext []dithererr
-	errnext = make([]dithererr, full.Bounds().Dx()+2)
+	errnext = make([]dithererr, smallfull.Bounds().Dx()+2)
 
 	var dsty int
-	for srcy := full.Bounds().Min.Y; srcy < full.Bounds().Max.Y; srcy++ {
+	for srcy := smallfull.Bounds().Min.Y; srcy < smallfull.Bounds().Max.Y; srcy++ {
 		errcurr = errnext
-		errnext = make([]dithererr, full.Bounds().Dx()+2)
+		errnext = make([]dithererr, smallfull.Bounds().Dx()+2)
 		var dstx int
-		for srcx := full.Bounds().Min.X; srcx < full.Bounds().Max.X; srcx++ {
-			srcnrgba := color.NRGBA64Model.Convert(full.At(srcx, srcy)).(color.NRGBA64)
+		for srcx := smallfull.Bounds().Min.X; srcx < smallfull.Bounds().Max.X; srcx++ {
+			srcnrgba := color.NRGBA64Model.Convert(smallfull.At(srcx, srcy)).(color.NRGBA64)
 			const oldMaxValue = 0xFFFF
 			const newMaxValue = 0xFFFF
 			clamp := func(in float64) float64 {
