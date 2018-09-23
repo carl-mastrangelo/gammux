@@ -271,7 +271,7 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 }
 
 func gammaMuxData(thumbnail, full io.Reader, dest io.Writer, dither, stretch bool) *errchain {
-	// sadly, Go's own decoder does not handle Gamma properly.  This program shares the shame
+	// sadly, Go's own decoder does not handle Gamma properly.  This program shares shame
 	// with all the other non-compliant renderers.
 	tim, _, err := image.Decode(thumbnail)
 	if err != nil {
@@ -301,20 +301,26 @@ func gammaMuxData(thumbnail, full io.Reader, dest io.Writer, dither, stretch boo
 	if _, err := dest.Write(buf.Bytes()[:headerIndexEnd]); err != nil {
 		return chain(err, "Unable to write PNG header")
 	}
-
-	gamaBuf := make([]byte, 4+4+4+4)
-	copy(gamaBuf, []byte{0, 0, 0, 4, 'g', 'A', 'M', 'A'})
-	binary.BigEndian.PutUint32(gamaBuf[8:12], uint32(100000/targetGamma))
-	crc := crc32.NewIEEE()
-	crc.Write(gamaBuf[4:12])
-	binary.BigEndian.PutUint32(gamaBuf[12:16], crc.Sum32())
-	if _, err := dest.Write(gamaBuf); err != nil {
-		return chain(err, "Unable to write PNG gAMA chunk")
+	if ec := writeGamaPngChunk(dest, targetGamma); ec != nil {
+		return ec
 	}
 	if _, err := dest.Write(buf.Bytes()[headerIndexEnd:]); err != nil {
 		return chain(err, "Unable to write PNG header")
 	}
 
+	return nil
+}
+
+func writeGamaPngChunk(w io.Writer, gamma float64) *errchain {
+	gamaBuf := make([]byte, 4+4+4+4)
+	copy(gamaBuf, []byte{0, 0, 0, 4, 'g', 'A', 'M', 'A'})
+	binary.BigEndian.PutUint32(gamaBuf[8:12], uint32(math.Round(100000/gamma)))
+	crc := crc32.NewIEEE()
+	crc.Write(gamaBuf[4:12])
+	binary.BigEndian.PutUint32(gamaBuf[12:16], crc.Sum32())
+	if _, err := w.Write(gamaBuf); err != nil {
+		return chain(err, "Unable to write PNG gAMA chunk")
+	}
 	return nil
 }
 
