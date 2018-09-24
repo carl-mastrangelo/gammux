@@ -25,7 +25,8 @@ const (
 	targetGamma = 1 / .02
 	sourceGamma = 2.2 // this is the common default.  Use this since Go doesn't expose it.
 
-	nrgbaMax = 0xFFFF
+	nrgba64Max = 0xFFFF
+	nrgbaMax   = 0xFF
 )
 
 var thumbnailDarkenFactor = math.Pow( /*darkest pixel=*/ math.Nextafter(0.5, 0)/255, 1/targetGamma)
@@ -81,9 +82,9 @@ func linearImage(srcim image.Image, gamma float64) *image.NRGBA64 {
 		var dstx int
 		for srcx := srcim.Bounds().Min.X; srcx < srcim.Bounds().Max.X; srcx++ {
 			nrgba64 := color.NRGBA64Model.Convert(srcim.At(srcx, srcy)).(color.NRGBA64)
-			nrgba64.R = uint16(nrgbaMax * math.Pow(float64(nrgba64.R)/nrgbaMax, gamma))
-			nrgba64.G = uint16(nrgbaMax * math.Pow(float64(nrgba64.G)/nrgbaMax, gamma))
-			nrgba64.B = uint16(nrgbaMax * math.Pow(float64(nrgba64.B)/nrgbaMax, gamma))
+			nrgba64.R = uint16(nrgba64Max * math.Pow(float64(nrgba64.R)/nrgba64Max, gamma))
+			nrgba64.G = uint16(nrgba64Max * math.Pow(float64(nrgba64.G)/nrgba64Max, gamma))
+			nrgba64.B = uint16(nrgba64Max * math.Pow(float64(nrgba64.B)/nrgba64Max, gamma))
 			// Alpha is not affected
 			dstim.SetNRGBA64(dstx, dsty, nrgba64)
 			dstx++
@@ -164,6 +165,13 @@ type dithererr struct {
 	r, g, b float64
 }
 
+func scaleClamp(v float64, max float64) float64 {
+	if v > 1.0 {
+		v = 1.0
+	}
+	return math.Round(v * max)
+}
+
 func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Image, *errchain) {
 	noOffsetThumbnailRec := image.Rectangle{
 		Max: image.Point{
@@ -177,12 +185,17 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 	// Always resize, regardless of dimensions
 	smallfull, xoffset, yoffset := resize(linearfull, noOffsetThumbnailRec, fullScaling, stretch)
 	// thumbnailDarkenFactor is a max value that will turn to black after the gamma transform
-	dst := darkenImage(thumbnail, thumbnailDarkenFactor)
-	if dst.Bounds() != noOffsetThumbnailRec {
-		panic("Bad bounds")
-	}
+	darkThumbnail := darkenImage(thumbnail, thumbnailDarkenFactor)
 	var errcurr, errnext []dithererr
 	errnext = make([]dithererr, smallfull.Bounds().Dx()+2)
+
+	dst := image.NewNRGBA(noOffsetThumbnailRec)
+
+	for srcy := 0; srcy < dst.Bounds().Max.Y; srcy++ {
+		for srcx := 0; srcx < dst.Bounds().Max.X; srcx++ {
+			dst.SetNRGBA(srcx, srcy, color.NRGBAModel.Convert(darkThumbnail.NRGBA64At(srcx, srcy)).(color.NRGBA))
+		}
+	}
 
 	var dsty int
 	for srcy := smallfull.Bounds().Min.Y; srcy < smallfull.Bounds().Max.Y; srcy++ {
@@ -191,44 +204,43 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 		var dstx int
 		for srcx := smallfull.Bounds().Min.X; srcx < smallfull.Bounds().Max.X; srcx++ {
 			srcnrgba := color.NRGBA64Model.Convert(smallfull.At(srcx, srcy)).(color.NRGBA64)
-			const oldMaxValue = 0xFFFF
-			const newMaxValue = 0xFFFF
-			clamp := func(in float64) float64 {
-				if in > newMaxValue {
-					return newMaxValue
-				}
-				return in
-			}
+
+			const newMaxValue = nrgbaMax
 			nonneg := func(in float64) float64 {
-				if in <= 0 {
-					return 1.0 / newMaxValue
+				// Use the 16 bit low regardless.  This could be changed if necessary.  Making the `low`
+				// too low makes full blacks dip into the visibility range of thumbnail.  Making it too
+				// high makes blacks washed out and too bright.  This choice here opts for a washed out
+				// thumbnail.
+				if low := 1.0 / nrgba64Max; in < low {
+					return low
 				}
 				return in
 			}
+
 			var (
 				// Make sure there are no zeros
-				red   = (float64(srcnrgba.R) + 1) / (oldMaxValue + 1)
-				green = (float64(srcnrgba.G) + 1) / (oldMaxValue + 1)
-				blue  = (float64(srcnrgba.B) + 1) / (oldMaxValue + 1)
+				red   = float64(srcnrgba.R) / nrgba64Max
+				green = float64(srcnrgba.G) / nrgba64Max
+				blue  = float64(srcnrgba.B) / nrgba64Max
 
 				// Apply the previous error
-				errorred   = red + errcurr[srcx+1].r
-				errorgreen = green + errcurr[srcx+1].g
-				errorblue  = blue + errcurr[srcx+1].b
+				// clamp pixel to minimum value.  This avoids a black mesh if the input pixel is black.
+				// Also, if there is a row of black pixels, the error can build up.  By clamping, negative
+				// will not get excessive.  (this consumes the first bright pixel after a string of dark
+				// pixels otherwise).
+				errorred   = nonneg(red + errcurr[srcx+1].r)
+				errorgreen = nonneg(green + errcurr[srcx+1].g)
+				errorblue  = nonneg(blue + errcurr[srcx+1].b)
 
 				// apply the new gamma
-				newred   = math.Pow(nonneg(errorred), 1/targetGamma)
-				newgreen = math.Pow(nonneg(errorgreen), 1/targetGamma)
-				newblue  = math.Pow(nonneg(errorblue), 1/targetGamma)
+				newred   = math.Pow(errorred, 1/targetGamma)
+				newgreen = math.Pow(errorgreen, 1/targetGamma)
+				newblue  = math.Pow(errorblue, 1/targetGamma)
 
-				// Add error and bring back up to scaled range
-				adjustedred   = newred * newMaxValue
-				adjustedgreen = newgreen * newMaxValue
-				adjustedblue  = newblue * newMaxValue
-
-				roundred   = clamp(math.Round(adjustedred))
-				roundgreen = clamp(math.Round(adjustedgreen))
-				roundblue  = clamp(math.Round(adjustedblue))
+				// bring value up to 0-newMaxValue range
+				roundred   = scaleClamp(newred, newMaxValue)
+				roundgreen = scaleClamp(newgreen, newMaxValue)
+				roundblue  = scaleClamp(newblue, newMaxValue)
 			)
 
 			if dither {
@@ -256,11 +268,11 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 				errnext[srcx+2].b += diffblue * 1 / 16
 			}
 
-			dst.SetNRGBA64(dstx+xoffset, dsty+yoffset, color.NRGBA64{
-				R: uint16(roundred),
-				G: uint16(roundgreen),
-				B: uint16(roundblue),
-				A: srcnrgba.A,
+			dst.Set(dstx+xoffset, dsty+yoffset, color.NRGBA{
+				R: uint8(roundred),
+				G: uint8(roundgreen),
+				B: uint8(roundblue),
+				A: uint8(srcnrgba.A),
 			})
 			dstx += fullScaling
 		}
