@@ -297,12 +297,13 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 func removeHalo(full, thumb, thumbeast, thumbsouth, thumbsoutheast color.NRGBA) (
 	newthumbeast, newthumbsouth, newthumbsoutheast color.NRGBA) {
 	clampround := func(val float64) uint8 {
-		if val > nrgbaMax {
+		v := math.Round(val)
+		if v > nrgbaMax {
 			return nrgbaMax
-		} else if val < 0 {
+		} else if v < 0 {
 			return 0
 		}
-		return uint8(val)
+		return uint8(v)
 	}
 	var (
 		rdiff = float64(full.R) - float64(thumb.R)
