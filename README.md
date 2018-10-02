@@ -13,7 +13,7 @@ on where it is viewed.
 To run:
 
 ```bash
-go run gammux.go -thumbnail ./fine.jpg  -full ./notfine.jpg  -dest mux.png -dither=true
+go run gammux.go -full ./fine.jpg -thumbnail ./notfine.jpg  -dest merged.png
 ```
 
 The tool takes 2 images as input:
@@ -21,17 +21,17 @@ The tool takes 2 images as input:
 1. The thumbnail, is what will be shown by non compliant implementations.
 2. The full image, which will be shown by compliant implementations.
 
-In the example, this is the thumbnail:
+In the example, this is the Full:
 
 ![fine.jpg](https://github.com/carl-mastrangelo/gammux/raw/master/fine.jpg "Fine")
 
-And the full image:
+And the thumbnail image:
 
 ![notfine.jpg](https://github.com/carl-mastrangelo/gammux/raw/master/notfine.jpg "Not Fine")
 
 This will produce 
 
-![mux.png](https://github.com/carl-mastrangelo/gammux/raw/master/merged.png "Muxed")
+![merged.png](https://github.com/carl-mastrangelo/gammux/raw/master/merged.png "Merged")
 
 
 Depending on your browser, or phone, or whatever you use to see this, you will see one of two 
