@@ -22,14 +22,14 @@ import (
 
 const (
 	fullScaling = 2
-	targetGamma = 1 / .02
+	targetGamma = 1 / .023
 	sourceGamma = 2.2 // this is the common default.  Use this since Go doesn't expose it.
 
 	nrgba64Max = 0xFFFF
 	nrgbaMax   = 0xFF
 )
 
-var thumbnailDarkenFactor = math.Pow( /*darkest pixel=*/ math.Nextafter(0.5, 0)/255, 1/targetGamma)
+var thumbnailDarkenFactor = math.Pow( /*darkest pixel=*/ math.Nextafter(0.5, 0)/nrgbaMax, 1/targetGamma)
 
 type errchain struct {
 	msg   string
@@ -57,7 +57,7 @@ var (
 		" Thumbnail(front) image.  If false, the Full image will be scaled proportionally to fit"+
 		" and centered.")
 
-	dither = flag.Bool("dither", false, "If true, dithers the Full(back) image to hide banding."+
+	dither = flag.Bool("dither", true, "If true, dithers the Full(back) image to hide banding."+
 		"  Use if the Full image doesn't contain text nor is already using few colors"+
 		" (such as comics).")
 
@@ -207,11 +207,7 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 
 			const newMaxValue = nrgbaMax
 			nonneg := func(in float64) float64 {
-				// Use the 16 bit low regardless.  This could be changed if necessary.  Making the `low`
-				// too low makes full blacks dip into the visibility range of thumbnail.  Making it too
-				// high makes blacks washed out and too bright.  This choice here opts for a washed out
-				// thumbnail.
-				if low := 1.0 / nrgba64Max; in < low {
+				if low := 1.0 / newMaxValue; in < low {
 					return low
 				}
 				return in
