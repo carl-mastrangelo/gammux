@@ -232,12 +232,11 @@ func calculateFullPixel(
 		errnext[srcx+2].g += diffgreen * 1 / 16
 		errnext[srcx+2].b += diffblue * 1 / 16
 	}
-	println(srcnrgba.A)
 	return color.NRGBA{
 		R: uint8(roundred),
 		G: uint8(roundgreen),
 		B: uint8(roundblue),
-		A: uint8(srcnrgba.A),
+		A: uint8(srcnrgba.A>>8),
 	}
 }
 
