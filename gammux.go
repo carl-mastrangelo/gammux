@@ -236,7 +236,7 @@ func calculateFullPixel(
 		R: uint8(roundred),
 		G: uint8(roundgreen),
 		B: uint8(roundblue),
-		A: uint8(srcnrgba.A>>8),
+		A: uint8(srcnrgba.A >> 8),
 	}
 }
 
@@ -265,15 +265,15 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 		}
 	}
 
-	var dsty int
+	dsty := yoffset
 	for srcy := smallfull.Bounds().Min.Y; srcy < smallfull.Bounds().Max.Y; srcy++ {
 		errcurr = errnext
 		errnext = make([]dithererr, smallfull.Bounds().Dx()+2)
-		var dstx int
+		dstx := xoffset
 		for srcx := smallfull.Bounds().Min.X; srcx < smallfull.Bounds().Max.X; srcx++ {
 			srcnrgba := color.NRGBA64Model.Convert(smallfull.At(srcx, srcy)).(color.NRGBA64)
 			newFullPixel := calculateFullPixel(srcx, srcnrgba, dither, errcurr, errnext)
-			dst.Set(dstx+xoffset, dsty+yoffset, newFullPixel)
+			dst.Set(dstx, dsty, newFullPixel)
 			dstx += fullScaling
 		}
 		dsty += fullScaling
