@@ -172,6 +172,75 @@ func scaleClamp(v float64, max float64) float64 {
 	return math.Round(v * max)
 }
 
+func calculateFullPixel(
+	srcx int, srcnrgba color.NRGBA64, dither bool, errcurr, errnext []dithererr) color.NRGBA {
+	const newMaxValue = nrgbaMax
+	nonneg := func(in float64) float64 {
+		if low := 1.0 / newMaxValue; in < low {
+			return low
+		}
+		return in
+	}
+
+	var (
+		// Make sure there are no zeros
+		red   = float64(srcnrgba.R) / nrgba64Max
+		green = float64(srcnrgba.G) / nrgba64Max
+		blue  = float64(srcnrgba.B) / nrgba64Max
+
+		// Apply the previous error
+		// clamp pixel to minimum value.  This avoids a black mesh if the input pixel is black.
+		// Also, if there is a row of black pixels, the error can build up.  By clamping, negative
+		// will not get excessive.  (this consumes the first bright pixel after a string of dark
+		// pixels otherwise).
+		errorred   = nonneg(red + errcurr[srcx+1].r)
+		errorgreen = nonneg(green + errcurr[srcx+1].g)
+		errorblue  = nonneg(blue + errcurr[srcx+1].b)
+
+		// apply the new gamma
+		newred   = math.Pow(errorred, 1/targetGamma)
+		newgreen = math.Pow(errorgreen, 1/targetGamma)
+		newblue  = math.Pow(errorblue, 1/targetGamma)
+
+		// bring value up to 0-newMaxValue range
+		roundred   = scaleClamp(newred, newMaxValue)
+		roundgreen = scaleClamp(newgreen, newMaxValue)
+		roundblue  = scaleClamp(newblue, newMaxValue)
+	)
+
+	if dither {
+		// Undo the gamma transform once more to make the error linear
+		var (
+			diffred   = errorred - math.Pow(roundred/newMaxValue, targetGamma)
+			diffgreen = errorgreen - math.Pow(roundgreen/newMaxValue, targetGamma)
+			diffblue  = errorblue - math.Pow(roundblue/newMaxValue, targetGamma)
+		)
+
+		errcurr[srcx+2].r += diffred * 7 / 16
+		errcurr[srcx+2].g += diffgreen * 7 / 16
+		errcurr[srcx+2].b += diffblue * 7 / 16
+
+		errnext[srcx].r += diffred * 3 / 16
+		errnext[srcx].g += diffgreen * 3 / 16
+		errnext[srcx].b += diffblue * 3 / 16
+
+		errnext[srcx+1].r += diffred * 5 / 16
+		errnext[srcx+1].g += diffgreen * 5 / 16
+		errnext[srcx+1].b += diffblue * 5 / 16
+
+		errnext[srcx+2].r += diffred * 1 / 16
+		errnext[srcx+2].g += diffgreen * 1 / 16
+		errnext[srcx+2].b += diffblue * 1 / 16
+	}
+	println(srcnrgba.A)
+	return color.NRGBA{
+		R: uint8(roundred),
+		G: uint8(roundgreen),
+		B: uint8(roundblue),
+		A: uint8(srcnrgba.A),
+	}
+}
+
 func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Image, *errchain) {
 	noOffsetThumbnailRec := image.Rectangle{
 		Max: image.Point{
@@ -204,72 +273,8 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 		var dstx int
 		for srcx := smallfull.Bounds().Min.X; srcx < smallfull.Bounds().Max.X; srcx++ {
 			srcnrgba := color.NRGBA64Model.Convert(smallfull.At(srcx, srcy)).(color.NRGBA64)
-
-			const newMaxValue = nrgbaMax
-			nonneg := func(in float64) float64 {
-				if low := 1.0 / newMaxValue; in < low {
-					return low
-				}
-				return in
-			}
-
-			var (
-				// Make sure there are no zeros
-				red   = float64(srcnrgba.R) / nrgba64Max
-				green = float64(srcnrgba.G) / nrgba64Max
-				blue  = float64(srcnrgba.B) / nrgba64Max
-
-				// Apply the previous error
-				// clamp pixel to minimum value.  This avoids a black mesh if the input pixel is black.
-				// Also, if there is a row of black pixels, the error can build up.  By clamping, negative
-				// will not get excessive.  (this consumes the first bright pixel after a string of dark
-				// pixels otherwise).
-				errorred   = nonneg(red + errcurr[srcx+1].r)
-				errorgreen = nonneg(green + errcurr[srcx+1].g)
-				errorblue  = nonneg(blue + errcurr[srcx+1].b)
-
-				// apply the new gamma
-				newred   = math.Pow(errorred, 1/targetGamma)
-				newgreen = math.Pow(errorgreen, 1/targetGamma)
-				newblue  = math.Pow(errorblue, 1/targetGamma)
-
-				// bring value up to 0-newMaxValue range
-				roundred   = scaleClamp(newred, newMaxValue)
-				roundgreen = scaleClamp(newgreen, newMaxValue)
-				roundblue  = scaleClamp(newblue, newMaxValue)
-			)
-
-			if dither {
-				// Undo the gamma transform once more to make the error linear
-				var (
-					diffred   = errorred - math.Pow(roundred/newMaxValue, targetGamma)
-					diffgreen = errorgreen - math.Pow(roundgreen/newMaxValue, targetGamma)
-					diffblue  = errorblue - math.Pow(roundblue/newMaxValue, targetGamma)
-				)
-
-				errcurr[srcx+2].r += diffred * 7 / 16
-				errcurr[srcx+2].g += diffgreen * 7 / 16
-				errcurr[srcx+2].b += diffblue * 7 / 16
-
-				errnext[srcx].r += diffred * 3 / 16
-				errnext[srcx].g += diffgreen * 3 / 16
-				errnext[srcx].b += diffblue * 3 / 16
-
-				errnext[srcx+1].r += diffred * 5 / 16
-				errnext[srcx+1].g += diffgreen * 5 / 16
-				errnext[srcx+1].b += diffblue * 5 / 16
-
-				errnext[srcx+2].r += diffred * 1 / 16
-				errnext[srcx+2].g += diffgreen * 1 / 16
-				errnext[srcx+2].b += diffblue * 1 / 16
-			}
-
-			dst.Set(dstx+xoffset, dsty+yoffset, color.NRGBA{
-				R: uint8(roundred),
-				G: uint8(roundgreen),
-				B: uint8(roundblue),
-				A: uint8(srcnrgba.A),
-			})
+			newFullPixel := calculateFullPixel(srcx, srcnrgba, dither, errcurr, errnext)
+			dst.Set(dstx+xoffset, dsty+yoffset, newFullPixel)
 			dstx += fullScaling
 		}
 		dsty += fullScaling
