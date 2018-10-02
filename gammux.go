@@ -22,7 +22,7 @@ import (
 
 const (
 	fullScaling = 2
-	targetGamma = 1 / .023
+	targetGamma = 1 / 0.02
 	sourceGamma = 2.2 // this is the common default.  Use this since Go doesn't expose it.
 
 	nrgba64Max = 0xFFFF
@@ -273,13 +273,64 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 		for srcx := smallfull.Bounds().Min.X; srcx < smallfull.Bounds().Max.X; srcx++ {
 			srcnrgba := color.NRGBA64Model.Convert(smallfull.At(srcx, srcy)).(color.NRGBA64)
 			newFullPixel := calculateFullPixel(srcx, srcnrgba, dither, errcurr, errnext)
-			dst.Set(dstx, dsty, newFullPixel)
+
+			thumbeast, thumbsouth, thumbsoutheast := removeHalo(
+				newFullPixel,
+				dst.NRGBAAt(dstx, dsty),
+				dst.NRGBAAt(dstx+1, dsty),
+				dst.NRGBAAt(dstx, dsty+1),
+				dst.NRGBAAt(dstx+1, dsty+1))
+
+			dst.SetNRGBA(dstx, dsty, newFullPixel)
+			dst.SetNRGBA(dstx+1, dsty, thumbeast)
+			dst.SetNRGBA(dstx, dsty+1, thumbsouth)
+			dst.SetNRGBA(dstx+1, dsty+1, thumbsoutheast)
 			dstx += fullScaling
 		}
 		dsty += fullScaling
 	}
 
 	return dst, nil
+}
+
+// Do averaging using the arithmetic mean, since that's what the decoder will (wrongly) do.
+func removeHalo(full, thumb, thumbeast, thumbsouth, thumbsoutheast color.NRGBA) (
+	newthumbeast, newthumbsouth, newthumbsoutheast color.NRGBA) {
+	clampround := func(val float64) uint8 {
+		if val > nrgbaMax {
+			return nrgbaMax
+		} else if val < 0 {
+			return 0
+		}
+		return uint8(val)
+	}
+	var (
+		rdiff = float64(full.R) - float64(thumb.R)
+		gdiff = float64(full.G) - float64(thumb.G)
+		bdiff = float64(full.B) - float64(thumb.B)
+	)
+
+	newthumbeast = color.NRGBA{
+		R: clampround(float64(thumbeast.R) - rdiff/3),
+		G: clampround(float64(thumbeast.G) - gdiff/3),
+		B: clampround(float64(thumbeast.B) - bdiff/3),
+		A: thumbeast.A,
+	}
+	newthumbsouth = color.NRGBA{
+		R: clampround(float64(thumbsouth.R) - rdiff/3),
+		G: clampround(float64(thumbsouth.G) - gdiff/3),
+		B: clampround(float64(thumbsouth.B) - bdiff/3),
+		A: thumbsouth.A,
+	}
+
+	thumbsoutheast = color.NRGBA{
+		R: clampround(float64(thumbsoutheast.R) - rdiff/3),
+		G: clampround(float64(thumbsoutheast.G) - gdiff/3),
+		B: clampround(float64(thumbsoutheast.B) - bdiff/3),
+		A: thumbsoutheast.A,
+	}
+
+	return newthumbeast, newthumbsouth, thumbsoutheast
 }
 
 func gammaMuxData(thumbnail, full io.Reader, dest io.Writer, dither, stretch bool) *errchain {
