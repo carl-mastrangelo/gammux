@@ -22,14 +22,16 @@ import (
 
 const (
 	fullScaling = 2
-	targetGamma = 1 / 0.02
+
 	sourceGamma = 2.2 // this is the common default.  Use this since Go doesn't expose it.
+
+	targetGamma = sourceGamma * 20
 
 	nrgba64Max = 0xFFFF
 	nrgbaMax   = 0xFF
 )
 
-var thumbnailDarkenFactor = math.Pow( /*darkest pixel=*/ math.Nextafter(0.5, 0)/nrgbaMax, 1/targetGamma)
+var thumbnailDarkenFactor = math.Pow( /*darkest pixel=*/ math.Nextafter(0.5, 0)/nrgbaMax, sourceGamma/targetGamma)
 
 type errchain struct {
 	msg   string
