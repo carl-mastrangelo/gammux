@@ -277,11 +277,11 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 			newFullPixel := calculateFullPixel(srcx, srcnrgba, dither, errcurr, errnext)
 
 			thumbeast, thumbsouth, thumbsoutheast := removeHalo(
-				newFullPixel,
-				dst.NRGBAAt(dstx, dsty),
-				dst.NRGBAAt(dstx+1, dsty),
-				dst.NRGBAAt(dstx, dsty+1),
-				dst.NRGBAAt(dstx+1, dsty+1))
+				color.NRGBA64Model.Convert(newFullPixel).(color.NRGBA64),
+				darkThumbnail.NRGBA64At(dstx, dsty),
+				darkThumbnail.NRGBA64At(dstx+1, dsty),
+				darkThumbnail.NRGBA64At(dstx, dsty+1),
+				darkThumbnail.NRGBA64At(dstx+1, dsty+1))
 
 			dst.SetNRGBA(dstx, dsty, newFullPixel)
 			dst.SetNRGBA(dstx+1, dsty, thumbeast)
@@ -296,10 +296,10 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 }
 
 // Do averaging using the arithmetic mean, since that's what the decoder will (wrongly) do.
-func removeHalo(full, thumb, thumbeast, thumbsouth, thumbsoutheast color.NRGBA) (
+func removeHalo(full, thumb, thumbeast, thumbsouth, thumbsoutheast color.NRGBA64) (
 	newthumbeast, newthumbsouth, newthumbsoutheast color.NRGBA) {
 	clampround := func(val float64) uint8 {
-		v := math.Round(val)
+		v := math.Round(val) / 256
 		if v > thumbnailDarkenFactor*nrgbaMax {
 			return uint8(thumbnailDarkenFactor * nrgbaMax)
 		} else if v < 0 {
@@ -323,23 +323,22 @@ func removeHalo(full, thumb, thumbeast, thumbsouth, thumbsoutheast color.NRGBA) 
 		R: clampround(float64(thumbeast.R) * rfactor),
 		G: clampround(float64(thumbeast.G) * gfactor),
 		B: clampround(float64(thumbeast.B) * bfactor),
-		A: thumbeast.A,
+		A: uint8(thumbeast.A >> 8),
 	}
 	newthumbsouth = color.NRGBA{
 		R: clampround(float64(thumbsouth.R) * rfactor),
 		G: clampround(float64(thumbsouth.G) * gfactor),
 		B: clampround(float64(thumbsouth.B) * bfactor),
-		A: thumbsouth.A,
+		A: uint8(thumbsouth.A >> 8),
 	}
-
-	thumbsoutheast = color.NRGBA{
+	newthumbsoutheast = color.NRGBA{
 		R: clampround(float64(thumbsoutheast.R) * rfactor),
 		G: clampround(float64(thumbsoutheast.G) * gfactor),
 		B: clampround(float64(thumbsoutheast.B) * bfactor),
-		A: thumbsoutheast.A,
+		A: uint8(thumbsoutheast.A >> 8),
 	}
 
-	return newthumbeast, newthumbsouth, thumbsoutheast
+	return newthumbeast, newthumbsouth, newthumbsoutheast
 }
 
 func gammaMuxData(thumbnail, full io.Reader, dest io.Writer, dither, stretch bool) *errchain {
