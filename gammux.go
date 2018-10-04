@@ -300,8 +300,8 @@ func removeHalo(full, thumb, thumbeast, thumbsouth, thumbsoutheast color.NRGBA) 
 	newthumbeast, newthumbsouth, newthumbsoutheast color.NRGBA) {
 	clampround := func(val float64) uint8 {
 		v := math.Round(val)
-		if v > nrgbaMax {
-			return nrgbaMax
+		if v > thumbnailDarkenFactor*nrgbaMax {
+			return uint8(thumbnailDarkenFactor * nrgbaMax)
 		} else if v < 0 {
 			return 0
 		}
