@@ -305,29 +305,35 @@ func removeHalo(full, thumb, thumbeast, thumbsouth, thumbsoutheast color.NRGBA) 
 		}
 		return uint8(v)
 	}
+
 	var (
-		rdiff = float64(full.R) - float64(thumb.R)
-		gdiff = float64(full.G) - float64(thumb.G)
-		bdiff = float64(full.B) - float64(thumb.B)
+		rdenom  = float64(thumbeast.R) + float64(thumbsouth.R) + float64(thumbsoutheast.R)
+		rfactor = (rdenom + float64(thumb.R) - float64(full.R)) / rdenom
+
+		gdenom  = float64(thumbeast.G) + float64(thumbsouth.G) + float64(thumbsoutheast.G)
+		gfactor = (gdenom + float64(thumb.G) - float64(full.G)) / gdenom
+
+		bdenom  = float64(thumbeast.B) + float64(thumbsouth.B) + float64(thumbsoutheast.B)
+		bfactor = (bdenom + float64(thumb.B) - float64(full.B)) / bdenom
 	)
 
 	newthumbeast = color.NRGBA{
-		R: clampround(float64(thumbeast.R) - rdiff/3),
-		G: clampround(float64(thumbeast.G) - gdiff/3),
-		B: clampround(float64(thumbeast.B) - bdiff/3),
+		R: clampround(float64(thumbeast.R) * rfactor),
+		G: clampround(float64(thumbeast.G) * gfactor),
+		B: clampround(float64(thumbeast.B) * bfactor),
 		A: thumbeast.A,
 	}
 	newthumbsouth = color.NRGBA{
-		R: clampround(float64(thumbsouth.R) - rdiff/3),
-		G: clampround(float64(thumbsouth.G) - gdiff/3),
-		B: clampround(float64(thumbsouth.B) - bdiff/3),
+		R: clampround(float64(thumbsouth.R) * rfactor),
+		G: clampround(float64(thumbsouth.G) * gfactor),
+		B: clampround(float64(thumbsouth.B) * bfactor),
 		A: thumbsouth.A,
 	}
 
 	thumbsoutheast = color.NRGBA{
-		R: clampround(float64(thumbsoutheast.R) - rdiff/3),
-		G: clampround(float64(thumbsoutheast.G) - gdiff/3),
-		B: clampround(float64(thumbsoutheast.B) - bdiff/3),
+		R: clampround(float64(thumbsoutheast.R) * rfactor),
+		G: clampround(float64(thumbsoutheast.G) * gfactor),
+		B: clampround(float64(thumbsoutheast.B) * bfactor),
 		A: thumbsoutheast.A,
 	}
 
