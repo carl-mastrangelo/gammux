@@ -70,6 +70,40 @@ var (
 		"webfallback", true, "If true, enable a web UI fallback at http://localhost:8080/")
 )
 
+func removeAlpha(src image.Image) *image.NRGBA64 {
+	dst := image.NewNRGBA64(image.Rectangle{
+		Max: image.Point{
+			X: src.Bounds().Dx(),
+			Y: src.Bounds().Dy(),
+		},
+	})
+	var dsty int
+	for y := src.Bounds().Min.Y; y < src.Bounds().Max.Y; y++ {
+		var dstx int
+		for x := src.Bounds().Min.X; x < src.Bounds().Max.X; x++ {
+			px := color.NRGBA64Model.Convert(src.At(x, y)).(color.NRGBA64)
+			if px.A != nrgba64Max {
+				dst.SetNRGBA64(dstx, dsty, color.NRGBA64{
+					R: uint16(uint32(px.R)*uint32(px.A)>>16 + nrgba64Max - uint32(px.A)),
+					G: uint16(uint32(px.G)*uint32(px.A)>>16 + nrgba64Max - uint32(px.A)),
+					B: uint16(uint32(px.B)*uint32(px.A)>>16 + nrgba64Max - uint32(px.A)),
+					A: nrgba64Max,
+				})
+			} else {
+				dst.SetNRGBA64(dstx, dsty, color.NRGBA64{
+					R: px.R,
+					G: px.G,
+					B: px.B,
+					A: nrgba64Max,
+				})
+			}
+			dstx++
+		}
+		dsty++
+	}
+	return dst
+}
+
 // Linearize image.  At leats 16 bits per channel are needed as per
 // http://lbodnar.dsl.pipex.com/imaging/gamma.html
 func linearImage(srcim image.Image, gamma float64) *image.NRGBA64 {
@@ -120,7 +154,7 @@ func darkenImage(srcim image.Image, scale float64) *image.NRGBA64 {
 	return dstim
 }
 
-// Assumes src  is linear
+// Assumes src is linear
 func resize(src image.Image, targetBounds image.Rectangle, targetScaleDown int, stretch bool) (
 	*image.NRGBA64, int, int) {
 	var xoffset, yoffset int
@@ -251,11 +285,11 @@ func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Im
 	}
 
 	// linearize before resizing
-	linearfull := linearImage(full, sourceGamma)
+	linearfull := linearImage(removeAlpha(full), sourceGamma)
 	// Always resize, regardless of dimensions
 	smallfull, xoffset, yoffset := resize(linearfull, noOffsetThumbnailRec, fullScaling, stretch)
 	// thumbnailDarkenFactor is a max value that will turn to black after the gamma transform
-	darkThumbnail := darkenImage(thumbnail, thumbnailDarkenFactor)
+	darkThumbnail := darkenImage(removeAlpha(thumbnail), thumbnailDarkenFactor)
 	var errcurr, errnext []dithererr
 	errnext = make([]dithererr, smallfull.Bounds().Dx()+2)
 
