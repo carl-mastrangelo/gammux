@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"bytes"
@@ -12,9 +12,7 @@ import (
 	_ "image/jpeg"
 	"image/png"
 	"io"
-	"log"
 	"math"
-	"net/http"
 	"os"
 
 	"golang.org/x/image/draw"
@@ -33,12 +31,12 @@ const (
 
 var thumbnailDarkenFactor = math.Pow( /*darkest pixel=*/ math.Nextafter(0.5, 0)/nrgbaMax, sourceGamma/targetGamma)
 
-type errchain struct {
+type ErrChain struct {
 	msg   string
 	cause error
 }
 
-func (e *errchain) Error() string {
+func (e *ErrChain) Error() string {
 	msg := e.msg
 	if e.cause != nil {
 		msg += "\n\tCaused by\n" + e.cause.Error()
@@ -46,9 +44,9 @@ func (e *errchain) Error() string {
 	return msg
 }
 
-func chain(cause error, params ...interface{}) *errchain {
+func chain(cause error, params ...interface{}) *ErrChain {
 	msg := fmt.Sprintln(params...)
-	return &errchain{
+	return &ErrChain{
 		msg:   msg[0 : len(msg)-2],
 		cause: cause,
 	}
@@ -276,7 +274,7 @@ func calculateFullPixel(
 	}
 }
 
-func gammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Image, *errchain) {
+func GammaMuxImages(thumbnail, full image.Image, dither, stretch bool) (image.Image, *ErrChain) {
 	noOffsetThumbnailRec := image.Rectangle{
 		Max: image.Point{
 			X: thumbnail.Bounds().Dx(),
@@ -375,7 +373,7 @@ func removeHalo(full, thumb, thumbeast, thumbsouth, thumbsoutheast color.NRGBA64
 	return newthumbeast, newthumbsouth, newthumbsoutheast
 }
 
-func gammaMuxData(thumbnail, full io.Reader, dest io.Writer, dither, stretch bool) *errchain {
+func GammaMuxData(thumbnail, full io.Reader, dest io.Writer, dither, stretch bool) *ErrChain {
 	// sadly, Go's own decoder does not handle Gamma properly.  This program shares shame
 	// with all the other non-compliant renderers.
 	tim, _, err := image.Decode(thumbnail)
@@ -387,7 +385,7 @@ func gammaMuxData(thumbnail, full io.Reader, dest io.Writer, dither, stretch boo
 		return chain(err, "Unable to decode full")
 	}
 
-	dim, ec := gammaMuxImages(tim, fim, dither, stretch)
+	dim, ec := GammaMuxImages(tim, fim, dither, stretch)
 	if ec != nil {
 		return ec
 	}
@@ -416,7 +414,7 @@ func gammaMuxData(thumbnail, full io.Reader, dest io.Writer, dither, stretch boo
 	return nil
 }
 
-func writeGamaPngChunk(w io.Writer, gamma float64) *errchain {
+func writeGamaPngChunk(w io.Writer, gamma float64) *ErrChain {
 	gamaBuf := make([]byte, 4+4+4+4)
 	copy(gamaBuf, []byte{0, 0, 0, 4, 'g', 'A', 'M', 'A'})
 	binary.BigEndian.PutUint32(gamaBuf[8:12], uint32(math.Round(100000/gamma)))
@@ -429,7 +427,7 @@ func writeGamaPngChunk(w io.Writer, gamma float64) *errchain {
 	return nil
 }
 
-func gammaMuxFiles(thumbnail, full, dest string, dither, stretch bool) *errchain {
+func GammaMuxFiles(thumbnail, full, dest string, dither, stretch bool) *ErrChain {
 	tf, err := os.Open(thumbnail)
 	if err != nil {
 		return chain(err, "Unable to open thumbnail file")
@@ -448,73 +446,5 @@ func gammaMuxFiles(thumbnail, full, dest string, dither, stretch bool) *errchain
 	}
 	defer df.Close()
 
-	return gammaMuxData(tf, ff, df, dither, stretch)
-}
-
-func runHttpServer() {
-	http.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			w.Write([]byte(`
-      <!doctype html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>Gammux - Gamma Muxer</title>
-      </head>
-      <body>
-      <h1>Gammux - Gamma Muxer</h1>
-      <fieldset>
-        <form action="/" method="post" enctype="multipart/form-data">
-          <dl>
-            <dt style="display:inline-block">Thumbnail Image</dt>
-            <dd style="display:inline-block"><input type="file" name="thumbnail" /></dd>
-          </dl>
-          <dl>
-            <dt style="display:inline-block">Full Image</dt>
-            <dd style="display:inline-block"><input type="file" name="full" /></dd>
-          </dl>
-          <input type="submit" value="Submit" />
-        </form>
-      </fieldset>
-      </body>
-      </html>
-      `))
-			return
-		}
-		thumbnail, _, err := r.FormFile("thumbnail")
-		if err != nil {
-			log.Println(err)
-			http.Error(w, "Problem reading thumbnail "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		full, _, err := r.FormFile("full")
-		if err != nil {
-			log.Println(err)
-			http.Error(w, "Problem reading full "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		var dest bytes.Buffer
-		if ec := gammaMuxData(thumbnail, full, &dest, *dither, *stretch); ec != nil {
-			log.Println(ec)
-			http.Error(w, "Problem making image "+ec.Error(), http.StatusBadRequest)
-			return
-		}
-		w.Header().Set("Content-Type", "image/png")
-		w.Header().Set("Content-Disposition", "attachment; filename=\"merged.png\"")
-		w.Write(dest.Bytes())
-	}))
-	log.Println("Open up your Web Browser to: http://localhost:8080/")
-	log.Println(http.ListenAndServe("localhost:8080", nil))
-	os.Exit(1)
-}
-
-func main() {
-	flag.Parse()
-
-	if *thumbnail == "" && *full == "" && *webfallback {
-		runHttpServer()
-	} else if ec := gammaMuxFiles(*thumbnail, *full, *dest, *dither, *stretch); ec != nil {
-		log.Println(ec)
-		os.Exit(1)
-	}
+	return GammaMuxData(tf, ff, df, dither, stretch)
 }
