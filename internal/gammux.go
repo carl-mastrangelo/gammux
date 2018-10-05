@@ -3,7 +3,6 @@ package internal
 import (
 	"bytes"
 	"encoding/binary"
-	"flag"
 	"fmt"
 	"hash/crc32"
 	"image"
@@ -51,22 +50,6 @@ func chain(cause error, params ...interface{}) *ErrChain {
 		cause: cause,
 	}
 }
-
-var (
-	stretch = flag.Bool("stretch", true, "If true, stretches the Full(back) image to fit the"+
-		" Thumbnail(front) image.  If false, the Full image will be scaled proportionally to fit"+
-		" and centered.")
-
-	dither = flag.Bool("dither", true, "If true, dithers the Full(back) image to hide banding."+
-		"  Use if the Full image doesn't contain text nor is already using few colors"+
-		" (such as comics).")
-
-	thumbnail   = flag.String("thumbnail", "", "The file path of the Thumbnail(front) image")
-	full        = flag.String("full", "", "The file path of the Full(back) image")
-	dest        = flag.String("dest", "", "The dest file path of the PNG image")
-	webfallback = flag.Bool(
-		"webfallback", true, "If true, enable a web UI fallback at http://localhost:8080/")
-)
 
 func removeAlpha(src image.Image) *image.NRGBA64 {
 	dst := image.NewNRGBA64(image.Rectangle{
