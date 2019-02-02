@@ -8,19 +8,26 @@
     body {
       font-family: Helvetica, Arial, sans-serif;
     }
-    table {
+    #pane {
       margin: auto;
       max-width:720px;
     }
-    td {
+    h1 {
+      text-align: center;
+    }
+    h3 {
+      margin-bottom: 8px;
+    }
+    label {
+      margin-left: 2em;
+    }
+    label input {
+      margin-bottom: 2em;
+    }
+    .result {
       background-color: #EFEFEF;
       padding: 1em 1em 1em 1em;
       overflow-x:auto;
-    }
-    td.input {
-      max-width: 360px; 
-      text-align:left;
-      width: 50%;
     }
   </style>
 </head>
@@ -31,35 +38,35 @@
     if (!(window.File && window.FileReader && window.FileList && window.Blob)) {
       console.error("Unable to read files");
     }
-    
 	  var go = new Go();
 	  WebAssembly.instantiateStreaming(fetch("./gammux.wasm"), go.importObject).then((result) => {
 		  go.run(result.instance);
 	  });
   })();
 </script>
-<div style="text-align:center">
+<div id="pane">
   <h1>Gammux</h1>
-  <p>An image steganography tool.</p> 
-  <table>
-    <tr>
-      <td class="input">
-        <label>Image 1 (Thumbnail): <input type="file" id="thumb" /></label>
-      </td>
-      <td class="input">
-        <label>Image 2 (Full): <input type="file" id="full" /></label>
-      </td>
-    </tr>
-    <tr>
-      <td colspan="2">
-        <p>After selection the Thumbnail and Full Image above, the result will appear here.</p>
-        <img id="muxxed" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" />
-      </td>
-    </tr>
-  <table>
+  <p align="center">Hide pictures inside others!</p>
+  <p style="text-align: left">
+    Gammux merges two pictures, a <strong>full-sized</strong> picture in a smaller 
+    <strong>thumbnail</strong> picture.  When websites resize the merged picture, the thumbnail is 
+    visible, but when view full the larger one is seen.  
+  </p>
+  <h3>1.  Pick an image to hide:</h3>
+  <label><input type="file" id="full" /></label>
+  <h3>2.  Pick an image to hide it in:</h3>
+  <label><input type="file" id="thumb" /></label>
+  <h3>3.  View result!</h3>
+  <div class="result">
+    <p>After selection the Thumbnail and Full Image above, the result will appear here.</p>
+    <img id="muxxed" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" />
+    <div class="error"></div>
+  </div>
+  <p>(You can <strong>right-click</strong> and save the image.)</p>
   <p>An explanation of how this work can be found on my 
   <a href="https://carlmastrangelo.com/blog/gamma-steganography">blog</a>.  The source code 
-  available on <a href="https://github.com/carl-mastrangelo/gammux">Github</a>.</p>
+  available on <a href="https://github.com/carl-mastrangelo/gammux">GitHub</a>.</p>
+  <p>Made by <a href="https://twitter.com/CarlMastrangelo">Carl Mastrangelo</a>.</p>
 </div>
 </body>
 </html>
