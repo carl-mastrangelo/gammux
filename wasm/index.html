@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name=viewport content="width=device-width, initial-scale=1">
+  <title>Gammux</title>
+  <style>
+    body {
+      font-family: Helvetica, Arial, sans-serif;
+    }
+    table {
+      margin: auto;
+      max-width:720px;
+    }
+    td {
+      background-color: #EFEFEF;
+      padding: 1em 1em 1em 1em;
+      overflow-x:auto;
+    }
+    td.input {
+      max-width: 360px; 
+      text-align:left;
+      width: 50%;
+    }
+  </style>
+</head>
+<body>
+<script src="wasm_exec.js"></script>
+<script "text/javascript">
+  (function() {
+    if (!(window.File && window.FileReader && window.FileList && window.Blob)) {
+      console.error("Unable to read files");
+    }
+    
+	  var go = new Go();
+	  WebAssembly.instantiateStreaming(fetch("./gammux.wasm"), go.importObject).then((result) => {
+		  go.run(result.instance);
+	  });
+  })();
+</script>
+<div style="text-align:center">
+  <h1>Gammux</h1>
+  <p>An image steganography tool.</p> 
+  <table>
+    <tr>
+      <td class="input">
+        <label>Image 1 (Thumbnail): <input type="file" id="thumb" /></label>
+      </td>
+      <td class="input">
+        <label>Image 2 (Full): <input type="file" id="full" /></label>
+      </td>
+    </tr>
+    <tr>
+      <td colspan="2">
+        <p>After selection the Thumbnail and Full Image above, the result will appear here.</p>
+        <img id="muxxed" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" />
+      </td>
+    </tr>
+  <table>
+  <p>An explanation of how this work can be found on my 
+  <a href="https://carlmastrangelo.com/blog/gamma-steganography">blog</a>.  The source code 
+  available on <a href="https://github.com/carl-mastrangelo/gammux">Github</a>.</p>
+</div>
+</body>
+</html>
