@@ -83,12 +83,34 @@ func runHttpServer() {
 	os.Exit(1)
 }
 
+func GammaMuxFiles(thumbnail, full, dest string, dither, stretch bool) *internal.ErrChain {
+	tf, err := os.Open(thumbnail)
+	if err != nil {
+		return internal.ChainErr(err, "Unable to open thumbnail file")
+	}
+	defer tf.Close()
+
+	ff, err := os.Open(full)
+	if err != nil {
+		return internal.ChainErr(err, "Unable to open full file")
+	}
+	defer ff.Close()
+
+	df, err := os.Create(dest)
+	if err != nil {
+		return internal.ChainErr(err, "Unable create dest file")
+	}
+	defer df.Close()
+
+	return internal.GammaMuxData(tf, ff, df, dither, stretch)
+}
+
 func main() {
 	flag.Parse()
 
 	if *thumbnail == "" && *full == "" && *webfallback {
 		runHttpServer()
-	} else if ec := internal.GammaMuxFiles(*thumbnail, *full, *dest, *dither, *stretch); ec != nil {
+	} else if ec := GammaMuxFiles(*thumbnail, *full, *dest, *dither, *stretch); ec != nil {
 		log.Println(ec)
 		os.Exit(1)
 	}
