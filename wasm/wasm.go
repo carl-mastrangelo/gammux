@@ -17,16 +17,16 @@ type fileOrErr struct {
 
 func watchFile(elementId string) <-chan fileOrErr {
 	res := make(chan fileOrErr)
-	cb := js.NewCallback(func(args []js.Value) {
+	cb := js.FuncOf(func(_ js.Value, args []js.Value) interface{} {
 		files := args[0].Get("target").Get("files")
 		if files.Get("length").Int() != 1 {
 			res <- fileOrErr{}
-			return
+			return nil
 		}
 		file := files.Index(0)
 		fr := js.Global().Get("FileReader").New()
 		fr.Call("readAsArrayBuffer", file)
-		fr.Set("onload", js.NewCallback(func(args2 []js.Value) {
+		fr.Set("onload", js.FuncOf(func(_ js.Value, args2 []js.Value) interface{} {
 			arrayBuffer := fr.Get("result")
 			data := js.Global().Get("Uint8Array").New(arrayBuffer)
 			dst := make([]byte, data.Get("length").Int())
@@ -36,14 +36,15 @@ func watchFile(elementId string) <-chan fileOrErr {
 			res <- fileOrErr{
 				data: dst,
 			}
-			return
+			return nil
 		}))
-		fr.Set("onerror", js.NewCallback(func(args2 []js.Value) {
+		fr.Set("onerror", js.FuncOf(func(_ js.Value, args2 []js.Value) interface{} {
 			res <- fileOrErr{
 				err: js.Error{Value: fr.Get("error")},
 			}
-			return
+			return nil
 		}))
+		return nil
 	})
 	doc := js.Global().Get("document")
 	elem := doc.Call("getElementById", elementId)
