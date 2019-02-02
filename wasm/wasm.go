@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"syscall/js"
 
-	"../internal"
+	"github.com/carl-mastrangelo/gammux/internal"
 )
 
 const noImageData = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
@@ -65,10 +65,7 @@ func setImage(data []byte) {
 	}
 }
 
-func check(thumb, full []byte) ([]byte, error) {
-	if thumb == nil || full == nil {
-		return nil, nil
-	}
+func gen(thumb, full []byte) ([]byte, error) {
 	dst := new(bytes.Buffer)
 	t := bytes.NewBuffer(thumb)
 	f := bytes.NewBuffer(full)
@@ -78,10 +75,25 @@ func check(thumb, full []byte) ([]byte, error) {
 	return dst.Bytes(), nil
 }
 
+func publishError(msg string) {
+	console := js.Global().Get("console")
+	console.Call("error", msg)
+	doc := js.Global().Get("document")
+	elem := doc.Call("getElementById", "error")
+	elem.Set("innerText", msg)
+	elem.Set("className", "errorText")
+}
+
+func publishNotice(msg string) {
+	doc := js.Global().Get("document")
+	elem := doc.Call("getElementById", "error")
+	elem.Set("innerText", msg)
+	elem.Set("className", "noticeText")
+}
+
 func main() {
 	thumbFile := watchFile("thumb")
 	fullFile := watchFile("full")
-	console := js.Global().Get("console")
 
 	var thumb []byte
 	var full []byte
@@ -89,23 +101,30 @@ func main() {
 		select {
 		case r := <-thumbFile:
 			if r.err != nil {
-				console.Call("error", r.err)
+				publishError(r.err.Error())
 			} else {
 				thumb = r.data
 			}
 		case r := <-fullFile:
 			if r.err != nil {
-				console.Call("error", r.err)
+				publishError(r.err.Error())
 			} else {
 				full = r.data
 			}
 		}
 		setImage(nil)
-		dst, err := check(thumb, full)
-		if err != nil {
-			console.Call("error", err.Error())
-		} else {
-			setImage(dst)
+		if len(thumb) == 0 || len(full) == 0 {
+			continue
 		}
+		publishNotice("Working...")
+		js.Global().Get("setTimeout").Invoke(js.FuncOf(func(_ js.Value, _ []js.Value) interface{} {
+			if dst, err := gen(thumb, full); err != nil {
+				publishError(err.Error())
+			} else {
+				setImage(dst)
+				publishNotice("")
+			}
+			return nil
+		}), 0)
 	}
 }

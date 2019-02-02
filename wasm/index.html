@@ -29,6 +29,14 @@
       padding: 1em 1em 1em 1em;
       overflow-x:auto;
     }
+    .errorText {
+      color: red;
+      font-size: 200%;
+    }
+    .noticeText {
+      color: blue;
+      font-size: 200%;
+    }
   </style>
 </head>
 <body>
@@ -60,7 +68,7 @@
   <div class="result">
     <p>After selection the Thumbnail and Full Image above, the result will appear here.</p>
     <img id="muxxed" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" />
-    <div class="error"></div>
+    <div id="error"></div>
   </div>
   <p>(You can <strong>right-click</strong> and save the image.)</p>
   <p>An explanation of how this work can be found on my 
