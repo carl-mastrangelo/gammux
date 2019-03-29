@@ -22,6 +22,12 @@ or if you want to use the **Python2** version:
 py -2 gammux.py fine.jpg notfine.jpg merged.png
 ```
 
+Make sure you have te pillow library installed. If not use this command:
+
+```
+py -2 -m pip install pillow
+```
+
 The tool takes 2 images as input:
 
 1. The thumbnail, is what will be shown by non compliant implementations.
