@@ -56,7 +56,7 @@ args = parser.parse_args()
 thumb = Image.open(args.thumbnail)
 full = Image.open(args.full)
 
-stretch = args.stretch  or True
+stretch = args.stretch or True
 dither = args.dither or False
 
 if stretch:
