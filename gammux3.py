@@ -66,15 +66,15 @@ if stretch:
 else:
     if full.size[0] *1.0 / full.size[1] > thumb.size[0] * 1.0 / thumb.size[1]:
         full = full.resize(
-            (thumb.size[0] / 2, int(full.size[1] /2.0 / full.size[0] * thumb.size[0])),
+            (thumb.size[0] // 2, int(full.size[1] / 2.0 / full.size[0] * thumb.size[0])),
             Image.LANCZOS)
         XOFF = 0
         YOFF = (thumb.size[1] - full.size[1]*2) / 2
     else:
         full = full.resize(
-            (int(full.size[0] /2.0 / full.size[1] * thumb.size[1]), thumb.size[1] / 2),
+            (int(full.size[0] / 2.0 / full.size[1] * thumb.size[1]), thumb.size[1] // 2),
             Image.LANCZOS)
-        XOFF = (thumb.size[0] - full.size[0]*2) / 2
+        XOFF = (thumb.size[0] - full.size[0] * 2) / 2
         YOFF = 0
 
 out = Image.new("RGB", thumb.size)
